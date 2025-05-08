@@ -56,7 +56,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
   /**
    * Apply plugin modifications to composer
    *
-   * @param Composer    $composer
+   * @param Composer $composer
    * @param IOInterface $io
    */
   public function activate(Composer $composer, IOInterface $io) {
@@ -151,8 +151,8 @@ class Patches implements PluginInterface, EventSubscriberInterface {
         $this->composer->getLoop()->wait($promises);
       }
     }
-    // If the Locker isn't available, then we don't need to do this.
-    // It's the first time packages have been installed.
+      // If the Locker isn't available, then we don't need to do this.
+      // It's the first time packages have been installed.
     catch (\LogicException $e) {
       return;
     }
@@ -190,7 +190,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
     }
     return $resolvedPatches;
   }
-  
+
   /**
    * Gather patches from dependencies and store them for later use.
    *
@@ -234,7 +234,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
           $this->patches = $this->arrayMergeRecursiveDistinct($this->patches, $extra['patches']);
         }
         // Unset installed patches for this package
-        if(isset($this->installedPatches[$package->getName()])) {
+        if (isset($this->installedPatches[$package->getName()])) {
           unset($this->installedPatches[$package->getName()]);
         }
       }
@@ -264,7 +264,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
    * @throws \Exception
    */
   public function grabPatches() {
-      // First, try to get the patches from the root composer.json.
+    // First, try to get the patches from the root composer.json.
     $extra = $this->composer->getPackage()->getExtra();
     if (isset($extra['patches'])) {
       $this->io->write('<info>Gathering patches for root package.</info>');
@@ -283,23 +283,23 @@ class Patches implements PluginInterface, EventSubscriberInterface {
             $msg = ' - Maximum stack depth exceeded';
             break;
           case JSON_ERROR_STATE_MISMATCH:
-            $msg =  ' - Underflow or the modes mismatch';
+            $msg = ' - Underflow or the modes mismatch';
             break;
           case JSON_ERROR_CTRL_CHAR:
             $msg = ' - Unexpected control character found';
             break;
           case JSON_ERROR_SYNTAX:
-            $msg =  ' - Syntax error, malformed JSON';
+            $msg = ' - Syntax error, malformed JSON';
             break;
           case JSON_ERROR_UTF8:
-            $msg =  ' - Malformed UTF-8 characters, possibly incorrectly encoded';
+            $msg = ' - Malformed UTF-8 characters, possibly incorrectly encoded';
             break;
           default:
-            $msg =  ' - Unknown error';
+            $msg = ' - Unknown error';
             break;
-          }
-          throw new \Exception('There was an error in the supplied patches file:' . $msg);
         }
+        throw new \Exception('There was an error in the supplied patches file:' . $msg);
+      }
       if (isset($patches['patches'])) {
         $patches = $patches['patches'];
         return $patches;
@@ -324,54 +324,78 @@ class Patches implements PluginInterface, EventSubscriberInterface {
     $exitOnFailure = getenv('COMPOSER_EXIT_ON_PATCH_FAILURE') || !empty($extra['composer-exit-on-patch-failure']);
     $skipReporting = getenv('COMPOSER_PATCHES_SKIP_REPORTING') || !empty($extra['composer-patches-skip-reporting']);
 
-    // Get the package object for the current operation.
-    $operation = $event->getOperation();
-    /** @var PackageInterface $package */
-    $package = $this->getPackageFromOperation($operation);
-    $package_name = $package->getName();
+    $repositoryManager = $this->composer->getRepositoryManager();
+    $installationManager = $this->composer->getInstallationManager();
+    $localRepository = $repositoryManager->getLocalRepository();
 
-    if (!isset($this->patches[$package_name])) {
-      if ($this->io->isVerbose()) {
-        $this->io->write('<info>No patches found for ' . $package_name . '.</info>');
+    // changed by armin
+    foreach ($this->patches as $packageName => $patches) {
+
+      // if package_name is _patchesGathered, then skip this item
+      if ($packageName === '_patchesGathered') {
+        continue;
       }
-      return;
-    }
-    $this->io->write('  - Applying patches for <info>' . $package_name . '</info>');
 
-    // Get the install path from the package object.
-    $manager = $event->getComposer()->getInstallationManager();
-    $install_path = $manager->getInstaller($package->getType())->getInstallPath($package);
+      $this->io->write('  - Applying patches for <info>' . $packageName . '</info>');
 
-    // Set up a downloader.
-    $downloader = new HttpDownloader($this->io, $this->composer->getConfig());
-
-    // Track applied patches in the package info in installed.json
-    $localRepository = $this->composer->getRepositoryManager()->getLocalRepository();
-    $localPackage = $localRepository->findPackage($package_name, $package->getVersion());
-    $extra = $localPackage->getExtra();
-    $extra['patches_applied'] = array();
-
-    foreach ($this->patches[$package_name] as $description => $url) {
-      $this->io->write('    <info>' . $url . '</info> (<comment>' . $description. '</comment>)');
-      try {
-        $this->eventDispatcher->dispatch(NULL, new PatchEvent(PatchEvents::PRE_PATCH_APPLY, $package, $url, $description));
-        $this->getAndApplyPatch($downloader, $install_path, $url, $package);
-        $this->eventDispatcher->dispatch(NULL, new PatchEvent(PatchEvents::POST_PATCH_APPLY, $package, $url, $description));
-        $extra['patches_applied'][$description] = $url;
-      }
-      catch (\Exception $e) {
-        $this->io->write('   <error>Could not apply patch! Skipping. The error was: ' . $e->getMessage() . '</error>');
-        if ($exitOnFailure) {
-          throw new \Exception("Cannot apply patch $description ($url)!");
+      $packages = $localRepository->getPackages();
+      $localPackage = null;
+      $installPath = null;
+      foreach ($packages as $package) {
+        if ($package->getName() === $packageName) {
+          $localPackage = $package;
+          $installPath = $installationManager->getInstallPath($package);
+          break;
         }
       }
-    }
-    $localPackage->setExtra($extra);
 
-    $this->io->write('');
+      if (!$localPackage) {
+        $errMsg = 'Cannot apply patches on package ' . $packageName . '! Package not found in local repository!';
+        $this->io->write('   <error>' . $errMsg . '</error>');
+        if ($exitOnFailure) {
+          throw new \Exception($errMsg);
+        }
+        continue;
+      }
 
-    if (true !== $skipReporting) {
-      $this->writePatchReport($this->patches[$package_name], $install_path);
+      // Set up a downloader.
+      $downloader = new HttpDownloader($this->io, $this->composer->getConfig());
+
+      // Track applied patches in the package info in installed.json
+      if ($localPackage) {
+        $extra = $localPackage->getExtra();
+      }
+
+      foreach ($patches as $description => $url) {
+        $this->io->write('    <info>' . $url . '</info> (<comment>' . $description . '</comment>)');
+        // skip applying patch if it is already applied
+        if (isset($extra['patches_applied'][$description])) {
+          if ($this->io->isVerbose()) {
+            $this->io->write('   <info>Patch already applied! Skipping.</info>');
+          }
+          continue;
+        }
+        try {
+          $this->eventDispatcher->dispatch(null,
+            new PatchEvent(PatchEvents::PRE_PATCH_APPLY, $package, $url, $description));
+          $this->getAndApplyPatch($downloader, $installPath, $url, $package);
+          $this->eventDispatcher->dispatch(null,
+            new PatchEvent(PatchEvents::POST_PATCH_APPLY, $package, $url, $description));
+          $extra['patches_applied'][$description] = $url;
+        } catch (\Exception $e) {
+          $this->io->write('   <error>Could not apply patch! Skipping. The error was: ' . $e->getMessage() . '</error>');
+          if ($exitOnFailure) {
+            throw new \Exception("Cannot apply patch $description ($url)!");
+          }
+        }
+      }
+      $localPackage->setExtra($extra);
+
+      $this->io->write('');
+
+      if (true !== $skipReporting) {
+        $this->writePatchReport($this->patches[$packageName], $installPath);
+      }
     }
   }
 
@@ -413,7 +437,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
     }
     else {
       // Generate random (but not cryptographically so) filename.
-      $filename = uniqid(sys_get_temp_dir().'/') . ".patch";
+      $filename = uniqid(sys_get_temp_dir() . '/') . ".patch";
 
       try {
         $downloader->copy($patch_url, $filename, array());
@@ -431,7 +455,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
 
     // Check for specified patch level for this package.
     $extra = $this->composer->getPackage()->getExtra();
-    if (!empty($extra['patchLevel'][$package->getName()])){
+    if (!empty($extra['patchLevel'][$package->getName()])) {
       $patch_levels = array($extra['patchLevel'][$package->getName()]);
     }
     // Attempt to apply with git apply.
@@ -613,18 +637,18 @@ class Patches implements PluginInterface, EventSubscriberInterface {
     return array_key_exists('patches_applied', $package->getExtra());
   }
 
-    /**
-     * {@inheritDoc}
-     */
-    public function deactivate(Composer $composer, IOInterface $io)
-    {
-    }
+  /**
+   * {@inheritDoc}
+   */
+  public function deactivate(Composer $composer, IOInterface $io)
+  {
+  }
 
-    /**
-     * {@inheritDoc}
-     */
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-    }
+  /**
+   * {@inheritDoc}
+   */
+  public function uninstall(Composer $composer, IOInterface $io)
+  {
+  }
 
 }

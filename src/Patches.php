@@ -56,7 +56,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
   /**
    * Apply plugin modifications to composer
    *
-   * @param Composer $composer
+   * @param Composer    $composer
    * @param IOInterface $io
    */
   public function activate(Composer $composer, IOInterface $io) {
@@ -151,8 +151,8 @@ class Patches implements PluginInterface, EventSubscriberInterface {
         $this->composer->getLoop()->wait($promises);
       }
     }
-      // If the Locker isn't available, then we don't need to do this.
-      // It's the first time packages have been installed.
+    // If the Locker isn't available, then we don't need to do this.
+    // It's the first time packages have been installed.
     catch (\LogicException $e) {
       return;
     }
@@ -175,8 +175,8 @@ class Patches implements PluginInterface, EventSubscriberInterface {
     $resolvedPatches = array();
     $vendorDir = $this->composer->getConfig()->get('vendor-dir');
     $packagePath = str_replace(dirname($vendorDir) . '/', '', $this->composer->getInstallationManager()->getInstallPath($package));
-    foreach ($patches as $packageName => $patches) {
-      foreach ($patches as $description => $path) {
+    foreach ($patches as $packageName => $packagePatches) {
+      foreach ($packagePatches as $description => $path) {
         if (strpos($path, './') === 0) {
           $path = './' . $packagePath . '/' . substr($path, 2);
           // Check for jailbreaks.
@@ -234,7 +234,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
           $this->patches = $this->arrayMergeRecursiveDistinct($this->patches, $extra['patches']);
         }
         // Unset installed patches for this package
-        if (isset($this->installedPatches[$package->getName()])) {
+        if(isset($this->installedPatches[$package->getName()])) {
           unset($this->installedPatches[$package->getName()]);
         }
       }
@@ -264,7 +264,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
    * @throws \Exception
    */
   public function grabPatches() {
-    // First, try to get the patches from the root composer.json.
+      // First, try to get the patches from the root composer.json.
     $extra = $this->composer->getPackage()->getExtra();
     if (isset($extra['patches'])) {
       $this->io->write('<info>Gathering patches for root package.</info>');
@@ -283,23 +283,23 @@ class Patches implements PluginInterface, EventSubscriberInterface {
             $msg = ' - Maximum stack depth exceeded';
             break;
           case JSON_ERROR_STATE_MISMATCH:
-            $msg = ' - Underflow or the modes mismatch';
+            $msg =  ' - Underflow or the modes mismatch';
             break;
           case JSON_ERROR_CTRL_CHAR:
             $msg = ' - Unexpected control character found';
             break;
           case JSON_ERROR_SYNTAX:
-            $msg = ' - Syntax error, malformed JSON';
+            $msg =  ' - Syntax error, malformed JSON';
             break;
           case JSON_ERROR_UTF8:
-            $msg = ' - Malformed UTF-8 characters, possibly incorrectly encoded';
+            $msg =  ' - Malformed UTF-8 characters, possibly incorrectly encoded';
             break;
           default:
-            $msg = ' - Unknown error';
+            $msg =  ' - Unknown error';
             break;
+          }
+          throw new \Exception('There was an error in the supplied patches file:' . $msg);
         }
-        throw new \Exception('There was an error in the supplied patches file:' . $msg);
-      }
       if (isset($patches['patches'])) {
         $patches = $patches['patches'];
         return $patches;
@@ -362,10 +362,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
       $downloader = new HttpDownloader($this->io, $this->composer->getConfig());
 
       // Track applied patches in the package info in installed.json
-      if ($localPackage) {
-        $extra = $localPackage->getExtra();
-      }
-
+      $extra = $localPackage->getExtra();
       foreach ($patches as $description => $url) {
         $this->io->write('    <info>' . $url . '</info> (<comment>' . $description . '</comment>)');
         // skip applying patch if it is already applied
@@ -377,10 +374,10 @@ class Patches implements PluginInterface, EventSubscriberInterface {
         }
         try {
           $this->eventDispatcher->dispatch(null,
-            new PatchEvent(PatchEvents::PRE_PATCH_APPLY, $package, $url, $description));
-          $this->getAndApplyPatch($downloader, $installPath, $url, $package);
+            new PatchEvent(PatchEvents::PRE_PATCH_APPLY, $localPackage, $url, $description));
+          $this->getAndApplyPatch($downloader, $installPath, $url, $localPackage);
           $this->eventDispatcher->dispatch(null,
-            new PatchEvent(PatchEvents::POST_PATCH_APPLY, $package, $url, $description));
+            new PatchEvent(PatchEvents::POST_PATCH_APPLY, $localPackage, $url, $description));
           $extra['patches_applied'][$description] = $url;
         } catch (\Exception $e) {
           $this->io->write('   <error>Could not apply patch! Skipping. The error was: ' . $e->getMessage() . '</error>');
@@ -437,7 +434,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
     }
     else {
       // Generate random (but not cryptographically so) filename.
-      $filename = uniqid(sys_get_temp_dir() . '/') . ".patch";
+      $filename = uniqid(sys_get_temp_dir().'/') . ".patch";
 
       try {
         $downloader->copy($patch_url, $filename, array());
@@ -455,7 +452,7 @@ class Patches implements PluginInterface, EventSubscriberInterface {
 
     // Check for specified patch level for this package.
     $extra = $this->composer->getPackage()->getExtra();
-    if (!empty($extra['patchLevel'][$package->getName()])) {
+    if (!empty($extra['patchLevel'][$package->getName()])){
       $patch_levels = array($extra['patchLevel'][$package->getName()]);
     }
     // Attempt to apply with git apply.
@@ -637,18 +634,18 @@ class Patches implements PluginInterface, EventSubscriberInterface {
     return array_key_exists('patches_applied', $package->getExtra());
   }
 
-  /**
-   * {@inheritDoc}
-   */
-  public function deactivate(Composer $composer, IOInterface $io)
-  {
-  }
+    /**
+     * {@inheritDoc}
+     */
+    public function deactivate(Composer $composer, IOInterface $io)
+    {
+    }
 
-  /**
-   * {@inheritDoc}
-   */
-  public function uninstall(Composer $composer, IOInterface $io)
-  {
-  }
+    /**
+     * {@inheritDoc}
+     */
+    public function uninstall(Composer $composer, IOInterface $io)
+    {
+    }
 
 }
